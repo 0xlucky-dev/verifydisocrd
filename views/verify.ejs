@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ยืนยันตัวตน</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://openfpcdn.io/fingerprintjs/v4/iife.min.js"></script>
+</head>
+<body>
+  <!-- Floating logos background -->
+  <div class="floating-bg" id="floatingBg"></div>
+
+  <div class="container">
+    <div class="card">
+      <div class="icon-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent)">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+      </div>
+      <h1>ยืนยันตัวตน</h1>
+      <p class="sub">กำลังเตรียมข้อมูล กรุณารอสักครู่...</p>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script>
+    // Floating logos — physics bounce, responsive to viewport
+    (function() {
+      const bg = document.getElementById('floatingBg');
+      let W = window.innerWidth, H = window.innerHeight;
+      window.addEventListener('resize', () => { W = window.innerWidth; H = window.innerHeight; });
+
+      const isMobile = W < 600;
+      const count = isMobile ? 4 : 8;
+      const baseSize = isMobile ? 75 : 100;
+
+      const logos = [];
+      for (let i = 0; i < count; i++) {
+        const img = document.createElement('img');
+        img.src = '/logo.png';
+        img.className = 'floating-logo';
+        const size = baseSize + Math.floor(Math.random() * 40);
+        img.style.width = size + 'px';
+        img.style.position = 'absolute';
+        img.style.left = '0';
+        img.style.top = '0';
+        const rotation = Math.floor(Math.random() * 360);
+        bg.appendChild(img);
+
+        logos.push({
+          el: img, size, rotation,
+          x: Math.random() * (W - size),
+          y: Math.random() * (H - size),
+          vx: (Math.random() - 0.5) * 1.0,
+          vy: (Math.random() - 0.5) * 1.0,
+        });
+      }
+
+      function tick() {
+        logos.forEach((a, i) => {
+          a.x += a.vx;
+          a.y += a.vy;
+
+          // Bounce off viewport edges
+          if (a.x <= 0) { a.x = 0; a.vx = Math.abs(a.vx); }
+          if (a.x + a.size >= W) { a.x = W - a.size; a.vx = -Math.abs(a.vx); }
+          if (a.y <= 0) { a.y = 0; a.vy = Math.abs(a.vy); }
+          if (a.y + a.size >= H) { a.y = H - a.size; a.vy = -Math.abs(a.vy); }
+
+          // Bounce off other logos
+          for (let j = i + 1; j < logos.length; j++) {
+            const b = logos[j];
+            const dx = (a.x + a.size/2) - (b.x + b.size/2);
+            const dy = (a.y + a.size/2) - (b.y + b.size/2);
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const minDist = (a.size + b.size) / 2;
+            if (dist < minDist && dist > 0) {
+              const nx = dx / dist, ny = dy / dist;
+              a.vx += nx * 0.4; a.vy += ny * 0.4;
+              b.vx -= nx * 0.4; b.vy -= ny * 0.4;
+              const overlap = (minDist - dist) / 2 + 1;
+              a.x += nx * overlap; a.y += ny * overlap;
+              b.x -= nx * overlap; b.y -= ny * overlap;
+            }
+          }
+
+          // Cap speed
+          const speed = Math.sqrt(a.vx*a.vx + a.vy*a.vy);
+          if (speed > 1.2) { a.vx *= 1.2/speed; a.vy *= 1.2/speed; }
+
+          a.el.style.transform = `translate(${a.x}px, ${a.y}px) rotate(${a.rotation}deg)`;
+        });
+        requestAnimationFrame(tick);
+      }
+      tick();
+    })();
+
+    // Fingerprint + redirect
+    (async () => {
+      try {
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        document.cookie = `fp_hash=${result.visitorId}; path=/; max-age=300; SameSite=Lax`;
+      } catch (e) {
+        document.cookie = `fp_hash=err; path=/; max-age=300; SameSite=Lax`;
+      }
+      const url = "<%- oauthUrl %>";
+      if (url && url !== "#") {
+        setTimeout(() => { window.location.href = url; }, 1500);
+      } else {
+        document.querySelector('.sub').textContent = 'กรุณากดปุ่มยืนยันใน Discord เพื่อเริ่มต้น';
+        document.querySelector('.spinner').style.display = 'none';
+      }
+    })();
+  </script>
+</body>
+</html>

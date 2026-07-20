@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ยืนยันสำเร็จ</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .loading-phase { display: flex; }
+    .result-phase { display: none; }
+    .result-phase.show {
+      display: block;
+      animation: popIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes popIn {
+      0% { transform: scale(0.5); opacity: 0; }
+      60% { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .check-circle {
+      width: 80px; height: 80px; margin: 0 auto 20px;
+      border-radius: 50%;
+      background: rgba(52, 211, 153, 0.1);
+      border: 2px solid rgba(52, 211, 153, 0.3);
+      display: flex; align-items: center; justify-content: center;
+      animation: checkPulse 0.6s ease-out;
+    }
+    @keyframes checkPulse {
+      0% { transform: scale(0); }
+      50% { transform: scale(1.3); }
+      100% { transform: scale(1); }
+    }
+    .check-circle svg {
+      width: 40px; height: 40px;
+      stroke-dasharray: 50;
+      stroke-dashoffset: 50;
+      animation: drawCheck 0.5s 0.3s forwards;
+    }
+    @keyframes drawCheck {
+      to { stroke-dashoffset: 0; }
+    }
+    .confetti { position: fixed; pointer-events: none; z-index: 100; }
+    .confetti span {
+      position: absolute; width: 8px; height: 8px; border-radius: 50%;
+      animation: confettiFall 1.5s ease-out forwards;
+    }
+    @keyframes confettiFall {
+      0% { transform: translateY(0) rotate(0); opacity: 1; }
+      100% { transform: translateY(400px) rotate(720deg); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="floating-bg" id="floatingBg"></div>
+
+  <div class="container">
+    <!-- Loading phase -->
+    <div class="card loading-phase" id="loadingPhase">
+      <div style="text-align:center; width:100%;">
+        <div class="icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent)">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+        </div>
+        <h1>กำลังยืนยัน...</h1>
+        <p class="sub">กรุณารอสักครู่</p>
+        <div class="spinner"></div>
+      </div>
+    </div>
+
+    <!-- Result phase -->
+    <div class="card result-phase" id="resultPhase">
+      <% if (roleOk) { %>
+        <div class="check-circle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <h1>ยืนยันตัวตนสำเร็จ!</h1>
+        <p class="username"><%= username %></p>
+        <p class="sub">คุณได้รับยศ Verified แล้ว</p>
+        <a href="<%= redirectUrl || 'https://discord.com/channels/@me' %>" class="btn" id="backBtn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.492c-1.53-.69-3.17-1.2-4.885-1.49a.075.075 0 00-.079.036c-.21.369-.444.85-.608 1.23a18.566 18.566 0 00-5.487 0 12.36 12.36 0 00-.617-1.23A.077.077 0 008.562 3c-1.714.29-3.354.8-4.885 1.491a.07.07 0 00-.032.027C.533 9.093-.32 13.555.099 17.961a.08.08 0 00.031.055 20.03 20.03 0 005.993 2.98.078.078 0 00.084-.026c.462-.62.874-1.275 1.226-1.963.074-.14.006-.3-.041-.104a13.201 13.201 0 01-1.872-.878.075.075 0 01-.008-.125c.126-.093.252-.19.372-.287a.075.075 0 01.078-.01c3.927 1.764 8.18 1.764 12.061 0a.075.075 0 01.079.009c.12.098.245.195.372.288a.075.075 0 01-.006.125c-.598.344-1.22.635-1.873.877a.075.075 0 00-.041.105c.36.687.772 1.341 1.225 1.962a.077.077 0 00.084.028 19.963 19.963 0 006.002-2.981.076.076 0 00.032-.054c.5-5.094-.838-9.52-3.549-13.442a.06.06 0 00-.031-.028z"/></svg>
+          กลับ Discord
+        </a>
+      <% } else { %>
+        <div class="icon-wrap warn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <h1>ยืนยันตัวตนสำเร็จ</h1>
+        <p class="username"><%= username %></p>
+        <p class="sub">แต่มอบยศไม่สำเร็จ<br>กรุณาติดต่อแอดมิน</p>
+        <a href="<%= redirectUrl || 'https://discord.com/channels/@me' %>" class="btn secondary">กลับ Discord</a>
+      <% } %>
+    </div>
+  </div>
+
+  <script>
+    // Floating logos
+    (function() {
+      const bg = document.getElementById('floatingBg');
+      let W = window.innerWidth, H = window.innerHeight;
+      window.addEventListener('resize', () => { W = window.innerWidth; H = window.innerHeight; });
+      const isMobile = W < 600;
+      const count = isMobile ? 4 : 8;
+      const baseSize = isMobile ? 75 : 100;
+      const logos = [];
+      for (let i = 0; i < count; i++) {
+        const img = document.createElement('img');
+        img.src = '/logo.png';
+        img.className = 'floating-logo';
+        const size = baseSize + Math.floor(Math.random() * 40);
+        img.style.width = size + 'px';
+        img.style.position = 'absolute';
+        img.style.left = '0'; img.style.top = '0';
+        const rotation = Math.floor(Math.random() * 360);
+        bg.appendChild(img);
+        logos.push({ el: img, size, rotation, x: Math.random()*(W-size), y: Math.random()*(H-size), vx: (Math.random()-0.5)*1.0, vy: (Math.random()-0.5)*1.0 });
+      }
+      function tick() {
+        logos.forEach((a, i) => {
+          a.x += a.vx; a.y += a.vy;
+          if (a.x<=0){a.x=0;a.vx=Math.abs(a.vx);} if(a.x+a.size>=W){a.x=W-a.size;a.vx=-Math.abs(a.vx);}
+          if (a.y<=0){a.y=0;a.vy=Math.abs(a.vy);} if(a.y+a.size>=H){a.y=H-a.size;a.vy=-Math.abs(a.vy);}
+          for (let j=i+1;j<logos.length;j++){
+            const b=logos[j],dx=(a.x+a.size/2)-(b.x+b.size/2),dy=(a.y+a.size/2)-(b.y+b.size/2),dist=Math.sqrt(dx*dx+dy*dy),minDist=(a.size+b.size)/2;
+            if(dist<minDist&&dist>0){const nx=dx/dist,ny=dy/dist;a.vx+=nx*0.4;a.vy+=ny*0.4;b.vx-=nx*0.4;b.vy-=ny*0.4;const o=(minDist-dist)/2+1;a.x+=nx*o;a.y+=ny*o;b.x-=nx*o;b.y-=ny*o;}
+          }
+          const sp=Math.sqrt(a.vx*a.vx+a.vy*a.vy); if(sp>1.2){a.vx*=1.2/sp;a.vy*=1.2/sp;}
+          a.el.style.transform=`translate(${a.x}px,${a.y}px) rotate(${a.rotation}deg)`;
+        });
+        requestAnimationFrame(tick);
+      }
+      tick();
+    })();
+
+    // Show loading for 2s then reveal result with animation
+    setTimeout(() => {
+      document.getElementById('loadingPhase').style.display = 'none';
+      document.getElementById('resultPhase').classList.add('show');
+
+      <% if (roleOk) { %>
+      // Canvas confetti explosion
+      (function() {
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:999;';
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+
+        const particles = [];
+        const colors = ['#a78bfa','#34d399','#fbbf24','#f472b6','#60a5fa','#fb923c','#e879f9','#22d3ee'];
+        const shapes = ['rect','circle','star'];
+        const cx = canvas.width / 2, cy = canvas.height / 2;
+
+        for (let i = 0; i < 120; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 4 + Math.random() * 12;
+          particles.push({
+            x: cx, y: cy,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 3,
+            size: 4 + Math.random() * 8,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            shape: shapes[Math.floor(Math.random() * shapes.length)],
+            rotation: Math.random() * 360,
+            rotSpeed: (Math.random() - 0.5) * 15,
+            gravity: 0.15 + Math.random() * 0.1,
+            opacity: 1,
+            decay: 0.008 + Math.random() * 0.008,
+          });
+        }
+
+        function drawStar(ctx, x, y, size, rotation) {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(rotation * Math.PI / 180);
+          ctx.beginPath();
+          for (let i = 0; i < 5; i++) {
+            const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+            const r = i === 0 ? size : size;
+            ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        function animate() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          let alive = false;
+          particles.forEach(p => {
+            if (p.opacity <= 0) return;
+            alive = true;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += p.gravity;
+            p.vx *= 0.99;
+            p.rotation += p.rotSpeed;
+            p.opacity -= p.decay;
+
+            ctx.globalAlpha = Math.max(0, p.opacity);
+            ctx.fillStyle = p.color;
+
+            if (p.shape === 'rect') {
+              ctx.save();
+              ctx.translate(p.x, p.y);
+              ctx.rotate(p.rotation * Math.PI / 180);
+              ctx.fillRect(-p.size/2, -p.size/3, p.size, p.size * 0.6);
+              ctx.restore();
+            } else if (p.shape === 'circle') {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, p.size/2, 0, Math.PI * 2);
+              ctx.fill();
+            } else {
+              drawStar(ctx, p.x, p.y, p.size/2, p.rotation);
+            }
+          });
+          ctx.globalAlpha = 1;
+          if (alive) requestAnimationFrame(animate);
+          else canvas.remove();
+        }
+        animate();
+      })();
+      <% } %>
+    }, 2000);
+
+    <% if (roleOk && redirectUrl) { %>
+    setTimeout(() => { window.location.href = "<%= redirectUrl %>"; }, 5000);
+    <% } %>
+  </script>
+</body>
+</html>
