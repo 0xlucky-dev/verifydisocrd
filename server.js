@@ -174,6 +174,13 @@ app.get("/api/cluster-check/:discordId", apiRateLimit, (req, res) => {
   res.json(result);
 });
 
+// API — record that a user claimed $daily (so cluster check knows)
+app.post("/api/claim/:discordId", apiRateLimit, (req, res) => {
+  const { discordId } = req.params;
+  db.recordClaim(discordId);
+  res.json({ ok: true });
+});
+
 // API — admin: reset cluster record for a user (requires API key)
 app.delete("/api/cluster/:discordId", apiRateLimit, (req, res) => {
   const { discordId } = req.params;

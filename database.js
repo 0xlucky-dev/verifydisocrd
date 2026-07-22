@@ -113,8 +113,8 @@ function checkAndClaimCheckin(discordId, credits, cooldownHours = 24) {
 }
 
 function clusterCheck(discordId) {
-  // Check if user belongs to a cluster with OTHER discord accounts (anti-alt)
-  // Whitelisted users are never flagged as alt and are excluded from cluster matching
+  // Anti-alt: block ONLY if another account in same cluster already claimed $daily
+  // within the cooldown window. Having multiple accounts alone is NOT enough to block.
   const user = db.prepare("SELECT * FROM verified_users WHERE discord_id=?").get(discordId);
   if (!user) {
     // Not verified yet — allow
@@ -134,11 +134,38 @@ function clusterCheck(discordId) {
       AND (ip = ? OR fp_hash = ?)
   `).all(discordId, user.ip, user.fp_hash);
 
-  if (others.length > 0) {
-    return { isAlt: true, otherAccounts: others.map(r => r.discord_id) };
+  if (others.length === 0) {
+    return { isAlt: false, otherAccounts: [] };
   }
 
-  return { isAlt: false, otherAccounts: [] };
+  // Only block if any of those other accounts claimed within last 24h
+  const window = 24 * 3600;
+  const now = Math.floor(Date.now() / 1000);
+  const otherIds = others.map(r => r.discord_id);
+  const placeholders = otherIds.map(() => '?').join(',');
+  const claimed = db.prepare(`
+    SELECT discord_id FROM checkin_log
+    WHERE discord_id IN (${placeholders})
+      AND claimed_at > ?
+    ORDER BY claimed_at DESC LIMIT 1
+  `).get(...otherIds, now - window);
+
+  if (claimed) {
+    return { isAlt: true, claimedBy: claimed.discord_id, otherAccounts: otherIds };
+  }
+
+  return { isAlt: false, otherAccounts: otherIds };
+}
+
+// Record that a user claimed $daily (used by clusterCheck to detect if alt already claimed)
+function recordClaim(discordId) {
+  const now = Math.floor(Date.now() / 1000);
+  const user = db.prepare("SELECT cluster_id FROM verified_users WHERE discord_id=?").get(discordId);
+  const clusterId = user ? user.cluster_id : `unverified::${discordId}`;
+  db.prepare(`
+    INSERT INTO checkin_log (discord_id, cluster_id, claimed_at, credits_given)
+    VALUES (?, ?, ?, 0)
+  `).run(discordId, clusterId, now);
 }
 
 // Admin: whitelist a user (exempt from cluster check, keeps verify record intact)
@@ -175,4 +202,4 @@ function getClusterInfo(discordId) {
   return { found: true, user, clusterMembers: others };
 }
 
-module.exports = { saveVerification, getClusterId, getUserInfo, checkAndClaimCheckin, clusterCheck, resetCluster, whitelistUser, unwhitelistUser, getClusterInfo };
+module.exports = { saveVerification, getClusterId, getUserInfo, checkAndClaimCheckin, clusterCheck, recordClaim, resetCluster, whitelistUser, unwhitelistUser, getClusterInfo };
