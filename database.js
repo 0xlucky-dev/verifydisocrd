@@ -63,7 +63,6 @@ if (rowsToFix.length > 0) {
   });
   tx();
 }
-}
 
 function makeClusterId(ip, fpHash) {
   return `${ip}::${fpHash}`;
