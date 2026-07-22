@@ -9,6 +9,7 @@ db.exec(`
     username TEXT,
     ip TEXT,
     fp_hash TEXT,
+    ip_prefix TEXT,
     account_created_at INTEGER,
     verified_at INTEGER,
     cluster_id TEXT,
@@ -23,10 +24,26 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cluster ON verified_users(cluster_id);
   CREATE INDEX IF NOT EXISTS idx_checkin_cluster ON checkin_log(cluster_id);
+  CREATE INDEX IF NOT EXISTS idx_ip_prefix ON verified_users(ip_prefix);
+  CREATE INDEX IF NOT EXISTS idx_fp_hash ON verified_users(fp_hash);
+  CREATE INDEX IF NOT EXISTS idx_checkin_discord ON checkin_log(discord_id, claimed_at);
 `);
 
-// Ensure whitelisted column exists (migration for existing DBs)
+// Migrations for existing DBs
 try { db.exec("ALTER TABLE verified_users ADD COLUMN whitelisted INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE verified_users ADD COLUMN ip_prefix TEXT"); } catch(e) {}
+
+// Backfill ip_prefix for existing rows
+const rowsToFix = db.prepare("SELECT discord_id, ip FROM verified_users WHERE ip_prefix IS NULL OR ip_prefix = ''").all();
+if (rowsToFix.length > 0) {
+  const stmt = db.prepare("UPDATE verified_users SET ip_prefix = ? WHERE discord_id = ?");
+  const tx = db.transaction(() => {
+    for (const row of rowsToFix) {
+      stmt.run(getIpPrefix(row.ip), row.discord_id);
+    }
+  });
+  tx();
+}
 
 function makeClusterId(ip, fpHash) {
   return `${ip}::${fpHash}`;
@@ -34,14 +51,15 @@ function makeClusterId(ip, fpHash) {
 
 function saveVerification(discordId, username, ip, fpHash, accountCreatedAt) {
   const clusterId = makeClusterId(ip, fpHash);
+  const ipPrefix = getIpPrefix(ip);
   const now = Math.floor(Date.now() / 1000);
   db.prepare(`
-    INSERT INTO verified_users (discord_id, username, ip, fp_hash, account_created_at, verified_at, cluster_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO verified_users (discord_id, username, ip, fp_hash, ip_prefix, account_created_at, verified_at, cluster_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(discord_id) DO UPDATE SET
       username=excluded.username, ip=excluded.ip, fp_hash=excluded.fp_hash,
-      verified_at=excluded.verified_at, cluster_id=excluded.cluster_id
-  `).run(discordId, username, ip, fpHash, accountCreatedAt, now, clusterId);
+      ip_prefix=excluded.ip_prefix, verified_at=excluded.verified_at, cluster_id=excluded.cluster_id
+  `).run(discordId, username, ip, fpHash, ipPrefix, accountCreatedAt, now, clusterId);
   return clusterId;
 }
 
@@ -130,8 +148,6 @@ function isValidFingerprint(fp) {
 }
 
 function clusterCheck(discordId) {
-  // Anti-alt: block ONLY if another account in same cluster already claimed $daily
-  // within the cooldown window. Having multiple accounts alone is NOT enough to block.
   const user = db.prepare("SELECT * FROM verified_users WHERE discord_id=?").get(discordId);
   if (!user) {
     return { isAlt: false, otherAccounts: [] };
@@ -141,36 +157,34 @@ function clusterCheck(discordId) {
     return { isAlt: false, otherAccounts: [] };
   }
 
-  const userPrefix = getIpPrefix(user.ip);
+  const userPrefix = user.ip_prefix || getIpPrefix(user.ip);
   const userFp = user.fp_hash;
   const hasFp = isValidFingerprint(userFp);
 
-  // Find other accounts: match IP prefix OR valid fingerprint
-  const allOthers = db.prepare(`
-    SELECT discord_id, ip, fp_hash FROM verified_users
-    WHERE discord_id != ?
-      AND whitelisted = 0
-  `).all(discordId);
-
-  const matchedIds = [];
-  for (const other of allOthers) {
-    const otherPrefix = getIpPrefix(other.ip);
-    const otherFp = other.fp_hash;
-    const fpMatch = hasFp && isValidFingerprint(otherFp) && userFp === otherFp;
-    const ipMatch = userPrefix === otherPrefix;
-
-    if (ipMatch || fpMatch) {
-      matchedIds.push(other.discord_id);
-    }
+  // Use indexed query: match by ip_prefix OR valid fingerprint
+  let others;
+  if (hasFp) {
+    others = db.prepare(`
+      SELECT discord_id FROM verified_users
+      WHERE discord_id != ? AND whitelisted = 0
+        AND (ip_prefix = ? OR fp_hash = ?)
+    `).all(discordId, userPrefix, userFp);
+  } else {
+    others = db.prepare(`
+      SELECT discord_id FROM verified_users
+      WHERE discord_id != ? AND whitelisted = 0
+        AND ip_prefix = ?
+    `).all(discordId, userPrefix);
   }
 
-  if (matchedIds.length === 0) {
+  if (others.length === 0) {
     return { isAlt: false, otherAccounts: [] };
   }
 
   // Only block if any matched account claimed within last 24h
   const window = 24 * 3600;
   const now = Math.floor(Date.now() / 1000);
+  const matchedIds = others.map(r => r.discord_id);
   const placeholders = matchedIds.map(() => '?').join(',');
   const claimed = db.prepare(`
     SELECT discord_id FROM checkin_log
