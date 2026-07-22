@@ -112,49 +112,78 @@ function checkAndClaimCheckin(discordId, credits, cooldownHours = 24) {
   return { allowed: true, blockingId: null, hoursRemaining: 0 };
 }
 
+function getIpPrefix(ip) {
+  // IPv4: match /24 (first 3 octets) e.g. "192.168.1"
+  // IPv6: match /64 (first 4 groups) e.g. "2001:fb1:58:fa42"
+  if (ip.includes(':')) {
+    // IPv6
+    const parts = ip.split(':');
+    return parts.slice(0, 4).join(':');
+  }
+  // IPv4
+  const parts = ip.split('.');
+  return parts.slice(0, 3).join('.');
+}
+
+function isValidFingerprint(fp) {
+  return fp && fp !== 'no-fp' && fp !== 'err' && fp !== 'unknown' && fp.length > 5;
+}
+
 function clusterCheck(discordId) {
   // Anti-alt: block ONLY if another account in same cluster already claimed $daily
   // within the cooldown window. Having multiple accounts alone is NOT enough to block.
   const user = db.prepare("SELECT * FROM verified_users WHERE discord_id=?").get(discordId);
   if (!user) {
-    // Not verified yet — allow
     return { isAlt: false, otherAccounts: [] };
   }
 
-  // If this user is whitelisted, never block them
   if (user.whitelisted) {
     return { isAlt: false, otherAccounts: [] };
   }
 
-  // Find other accounts with same IP OR same fingerprint (exclude self + whitelisted)
-  const others = db.prepare(`
-    SELECT discord_id FROM verified_users
+  const userPrefix = getIpPrefix(user.ip);
+  const userFp = user.fp_hash;
+  const hasFp = isValidFingerprint(userFp);
+
+  // Find other accounts: match IP prefix OR valid fingerprint
+  const allOthers = db.prepare(`
+    SELECT discord_id, ip, fp_hash FROM verified_users
     WHERE discord_id != ?
       AND whitelisted = 0
-      AND (ip = ? OR fp_hash = ?)
-  `).all(discordId, user.ip, user.fp_hash);
+  `).all(discordId);
 
-  if (others.length === 0) {
+  const matchedIds = [];
+  for (const other of allOthers) {
+    const otherPrefix = getIpPrefix(other.ip);
+    const otherFp = other.fp_hash;
+    const fpMatch = hasFp && isValidFingerprint(otherFp) && userFp === otherFp;
+    const ipMatch = userPrefix === otherPrefix;
+
+    if (ipMatch || fpMatch) {
+      matchedIds.push(other.discord_id);
+    }
+  }
+
+  if (matchedIds.length === 0) {
     return { isAlt: false, otherAccounts: [] };
   }
 
-  // Only block if any of those other accounts claimed within last 24h
+  // Only block if any matched account claimed within last 24h
   const window = 24 * 3600;
   const now = Math.floor(Date.now() / 1000);
-  const otherIds = others.map(r => r.discord_id);
-  const placeholders = otherIds.map(() => '?').join(',');
+  const placeholders = matchedIds.map(() => '?').join(',');
   const claimed = db.prepare(`
     SELECT discord_id FROM checkin_log
     WHERE discord_id IN (${placeholders})
       AND claimed_at > ?
     ORDER BY claimed_at DESC LIMIT 1
-  `).get(...otherIds, now - window);
+  `).get(...matchedIds, now - window);
 
   if (claimed) {
-    return { isAlt: true, claimedBy: claimed.discord_id, otherAccounts: otherIds };
+    return { isAlt: true, claimedBy: claimed.discord_id, otherAccounts: matchedIds };
   }
 
-  return { isAlt: false, otherAccounts: otherIds };
+  return { isAlt: false, otherAccounts: matchedIds };
 }
 
 // Record that a user claimed $daily (used by clusterCheck to detect if alt already claimed)

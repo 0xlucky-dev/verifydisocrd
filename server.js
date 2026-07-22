@@ -31,10 +31,15 @@ const rateLimits = {};  // { "ip_subnet": { count, lastReset, blocked_until } }
 const apiRateLimits = {}; // { "ip_subnet": { last_call, blocked_until } }
 
 function getSubnet(ip) {
-  // Get /24 subnet (first 3 octets) — e.g. "192.168.1" from "192.168.1.55"
+  // IPv4: /24 subnet (first 3 octets)
+  // IPv6: /64 prefix (first 4 groups)
+  if (ip.includes(':')) {
+    const parts = ip.split(':');
+    return parts.slice(0, 4).join(':');
+  }
   const parts = ip.split(".");
   if (parts.length === 4) return parts.slice(0, 3).join(".");
-  return ip; // IPv6 or unknown — use full
+  return ip;
 }
 
 function getClientIp(req) {
