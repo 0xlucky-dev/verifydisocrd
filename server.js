@@ -167,8 +167,29 @@ app.get("/callback", webRateLimit, async (req, res) => {
   }
 });
 
-// API — for service-bot $checkin to call
-app.get("/api/checkin/:discordId", (req, res) => {
+// API — for service-bot $daily to check cluster (anti-alt only, no log)
+app.get("/api/cluster-check/:discordId", apiRateLimit, (req, res) => {
+  const { discordId } = req.params;
+  const result = db.clusterCheck(discordId);
+  res.json(result);
+});
+
+// API — admin: reset cluster record for a user (requires API key)
+app.delete("/api/cluster/:discordId", apiRateLimit, (req, res) => {
+  const { discordId } = req.params;
+  const result = db.resetCluster(discordId);
+  res.json(result);
+});
+
+// API — admin: get cluster info for a user (requires API key)
+app.get("/api/cluster/:discordId", apiRateLimit, (req, res) => {
+  const { discordId } = req.params;
+  const result = db.getClusterInfo(discordId);
+  res.json(result);
+});
+
+// API — legacy checkin (kept for compatibility)
+app.get("/api/checkin/:discordId", apiRateLimit, (req, res) => {
   const { discordId } = req.params;
   const credits = parseInt(req.query.credits || "15");
   const cooldown = parseInt(req.query.cooldown || "24");

@@ -108,4 +108,45 @@ function checkAndClaimCheckin(discordId, credits, cooldownHours = 24) {
   return { allowed: true, blockingId: null, hoursRemaining: 0 };
 }
 
-module.exports = { saveVerification, getClusterId, getUserInfo, checkAndClaimCheckin };
+function clusterCheck(discordId) {
+  // Check if user belongs to a cluster with OTHER discord accounts (anti-alt)
+  // Returns: { isAlt: false } or { isAlt: true, otherAccounts: ["id1", "id2"] }
+  const user = db.prepare("SELECT * FROM verified_users WHERE discord_id=?").get(discordId);
+  if (!user) {
+    // Not verified yet — allow (can't check cluster without verification)
+    return { isAlt: false, otherAccounts: [] };
+  }
+
+  // Find other accounts with same IP OR same fingerprint (exclude self)
+  const others = db.prepare(`
+    SELECT discord_id FROM verified_users
+    WHERE discord_id != ?
+      AND (ip = ? OR fp_hash = ?)
+  `).all(discordId, user.ip, user.fp_hash);
+
+  if (others.length > 0) {
+    return { isAlt: true, otherAccounts: others.map(r => r.discord_id) };
+  }
+
+  return { isAlt: false, otherAccounts: [] };
+}
+
+// Admin: reset cluster for a user (delete their verification record so they can re-verify clean)
+function resetCluster(discordId) {
+  const info = db.prepare("DELETE FROM verified_users WHERE discord_id=?").run(discordId);
+  db.prepare("DELETE FROM checkin_log WHERE discord_id=?").run(discordId);
+  return { deleted: info.changes > 0 };
+}
+
+// Admin: get cluster info for a user
+function getClusterInfo(discordId) {
+  const user = db.prepare("SELECT * FROM verified_users WHERE discord_id=?").get(discordId);
+  if (!user) return { found: false };
+  const others = db.prepare(`
+    SELECT discord_id, username, ip, fp_hash FROM verified_users
+    WHERE discord_id != ? AND (ip = ? OR fp_hash = ?)
+  `).all(discordId, user.ip, user.fp_hash);
+  return { found: true, user, clusterMembers: others };
+}
+
+module.exports = { saveVerification, getClusterId, getUserInfo, checkAndClaimCheckin, clusterCheck, resetCluster, getClusterInfo };
