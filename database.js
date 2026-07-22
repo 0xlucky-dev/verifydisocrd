@@ -24,14 +24,33 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cluster ON verified_users(cluster_id);
   CREATE INDEX IF NOT EXISTS idx_checkin_cluster ON checkin_log(cluster_id);
-  CREATE INDEX IF NOT EXISTS idx_ip_prefix ON verified_users(ip_prefix);
-  CREATE INDEX IF NOT EXISTS idx_fp_hash ON verified_users(fp_hash);
-  CREATE INDEX IF NOT EXISTS idx_checkin_discord ON checkin_log(discord_id, claimed_at);
 `);
 
 // Migrations for existing DBs
 try { db.exec("ALTER TABLE verified_users ADD COLUMN whitelisted INTEGER DEFAULT 0"); } catch(e) {}
 try { db.exec("ALTER TABLE verified_users ADD COLUMN ip_prefix TEXT"); } catch(e) {}
+
+// Create indexes (after migration ensures columns exist)
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_ip_prefix ON verified_users(ip_prefix)"); } catch(e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_fp_hash ON verified_users(fp_hash)"); } catch(e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_checkin_discord ON checkin_log(discord_id, claimed_at)"); } catch(e) {}
+
+// Migrations for existing DBs
+try { db.exec("ALTER TABLE verified_users ADD COLUMN whitelisted INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE verified_users ADD COLUMN ip_prefix TEXT"); } catch(e) {}
+
+function getIpPrefix(ip) {
+  if (ip.includes(':')) {
+    const parts = ip.split(':');
+    return parts.slice(0, 4).join(':');
+  }
+  const parts = ip.split('.');
+  return parts.slice(0, 3).join('.');
+}
+
+function isValidFingerprint(fp) {
+  return fp && fp !== 'no-fp' && fp !== 'err' && fp !== 'unknown' && fp.length > 5;
+}
 
 // Backfill ip_prefix for existing rows
 const rowsToFix = db.prepare("SELECT discord_id, ip FROM verified_users WHERE ip_prefix IS NULL OR ip_prefix = ''").all();
@@ -43,6 +62,7 @@ if (rowsToFix.length > 0) {
     }
   });
   tx();
+}
 }
 
 function makeClusterId(ip, fpHash) {
@@ -128,23 +148,6 @@ function checkAndClaimCheckin(discordId, credits, cooldownHours = 24) {
   `).run(discordId, clusterId, now, credits);
 
   return { allowed: true, blockingId: null, hoursRemaining: 0 };
-}
-
-function getIpPrefix(ip) {
-  // IPv4: match /24 (first 3 octets) e.g. "192.168.1"
-  // IPv6: match /64 (first 4 groups) e.g. "2001:fb1:58:fa42"
-  if (ip.includes(':')) {
-    // IPv6
-    const parts = ip.split(':');
-    return parts.slice(0, 4).join(':');
-  }
-  // IPv4
-  const parts = ip.split('.');
-  return parts.slice(0, 3).join('.');
-}
-
-function isValidFingerprint(fp) {
-  return fp && fp !== 'no-fp' && fp !== 'err' && fp !== 'unknown' && fp.length > 5;
 }
 
 function clusterCheck(discordId) {
