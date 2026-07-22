@@ -100,15 +100,24 @@
 
     // Fingerprint + redirect
     (async () => {
+      let fpHash = 'no-fp';
       try {
         const fp = await FingerprintJS.load();
         const result = await fp.get();
-        document.cookie = `fp_hash=${result.visitorId}; path=/; max-age=300; SameSite=Lax`;
+        fpHash = result.visitorId;
+        document.cookie = `fp_hash=${fpHash}; path=/; max-age=300; SameSite=Lax`;
       } catch (e) {
+        fpHash = 'err';
         document.cookie = `fp_hash=err; path=/; max-age=300; SameSite=Lax`;
       }
-      const url = "<%- oauthUrl %>";
+      let url = "<%- oauthUrl %>";
       if (url && url !== "#") {
+        // Append fingerprint to OAuth state so it survives the redirect
+        if (url.includes('&state=')) {
+          url = url.replace(/&state=([^&]*)/, '&state=$1_fp_' + fpHash);
+        } else {
+          url += '&state=_fp_' + fpHash;
+        }
         setTimeout(() => { window.location.href = url; }, 1500);
       } else {
         document.querySelector('.sub').textContent = 'กรุณากดปุ่มยืนยันใน Discord เพื่อเริ่มต้น';

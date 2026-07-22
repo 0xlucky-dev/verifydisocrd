@@ -119,7 +119,11 @@ app.get("/verify", webRateLimit, (req, res) => {
 // OAuth2 callback
 app.get("/callback", webRateLimit, async (req, res) => {
   const { code, state } = req.query;
-  const fpHash = req.cookies?.fp_hash || req.query.fp || "no-fp";
+  // Extract fingerprint from state (format: "discordId_fp_HASH" or "_fp_HASH")
+  let fpHash = req.cookies?.fp_hash || "no-fp";
+  if (state && state.includes("_fp_")) {
+    fpHash = state.split("_fp_")[1] || fpHash;
+  }
 
   if (!code) return res.status(400).render("error", { message: "Missing code" });
 
