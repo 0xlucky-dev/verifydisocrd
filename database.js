@@ -11,7 +11,8 @@ db.exec(`
     fp_hash TEXT,
     account_created_at INTEGER,
     verified_at INTEGER,
-    cluster_id TEXT
+    cluster_id TEXT,
+    whitelisted INTEGER DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS checkin_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,6 +24,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cluster ON verified_users(cluster_id);
   CREATE INDEX IF NOT EXISTS idx_checkin_cluster ON checkin_log(cluster_id);
 `);
+
+// Ensure whitelisted column exists (migration for existing DBs)
+try { db.exec("ALTER TABLE verified_users ADD COLUMN whitelisted INTEGER DEFAULT 0"); } catch(e) {}
 
 function makeClusterId(ip, fpHash) {
   return `${ip}::${fpHash}`;
@@ -110,17 +114,23 @@ function checkAndClaimCheckin(discordId, credits, cooldownHours = 24) {
 
 function clusterCheck(discordId) {
   // Check if user belongs to a cluster with OTHER discord accounts (anti-alt)
-  // Returns: { isAlt: false } or { isAlt: true, otherAccounts: ["id1", "id2"] }
+  // Whitelisted users are never flagged as alt and are excluded from cluster matching
   const user = db.prepare("SELECT * FROM verified_users WHERE discord_id=?").get(discordId);
   if (!user) {
-    // Not verified yet — allow (can't check cluster without verification)
+    // Not verified yet — allow
     return { isAlt: false, otherAccounts: [] };
   }
 
-  // Find other accounts with same IP OR same fingerprint (exclude self)
+  // If this user is whitelisted, never block them
+  if (user.whitelisted) {
+    return { isAlt: false, otherAccounts: [] };
+  }
+
+  // Find other accounts with same IP OR same fingerprint (exclude self + whitelisted)
   const others = db.prepare(`
     SELECT discord_id FROM verified_users
     WHERE discord_id != ?
+      AND whitelisted = 0
       AND (ip = ? OR fp_hash = ?)
   `).all(discordId, user.ip, user.fp_hash);
 
@@ -131,11 +141,27 @@ function clusterCheck(discordId) {
   return { isAlt: false, otherAccounts: [] };
 }
 
-// Admin: reset cluster for a user (delete their verification record so they can re-verify clean)
+// Admin: whitelist a user (exempt from cluster check, keeps verify record intact)
+function whitelistUser(discordId) {
+  const info = db.prepare("UPDATE verified_users SET whitelisted=1 WHERE discord_id=?").run(discordId);
+  return { success: info.changes > 0 };
+}
+
+// Admin: remove whitelist
+function unwhitelistUser(discordId) {
+  const info = db.prepare("UPDATE verified_users SET whitelisted=0 WHERE discord_id=?").run(discordId);
+  return { success: info.changes > 0 };
+}
+
+// Admin: reset cluster — remove the link (set ip/fp to unique values so no match)
+// Does NOT delete the record — user doesn't need to re-verify
 function resetCluster(discordId) {
-  const info = db.prepare("DELETE FROM verified_users WHERE discord_id=?").run(discordId);
+  const now = Date.now();
+  const info = db.prepare(`
+    UPDATE verified_users SET ip = 'reset_' || ?, fp_hash = 'reset_' || ? WHERE discord_id = ?
+  `).run(`${discordId}_${now}`, `${discordId}_${now}`, discordId);
   db.prepare("DELETE FROM checkin_log WHERE discord_id=?").run(discordId);
-  return { deleted: info.changes > 0 };
+  return { success: info.changes > 0 };
 }
 
 // Admin: get cluster info for a user
@@ -143,10 +169,10 @@ function getClusterInfo(discordId) {
   const user = db.prepare("SELECT * FROM verified_users WHERE discord_id=?").get(discordId);
   if (!user) return { found: false };
   const others = db.prepare(`
-    SELECT discord_id, username, ip, fp_hash FROM verified_users
+    SELECT discord_id, username, ip, fp_hash, whitelisted FROM verified_users
     WHERE discord_id != ? AND (ip = ? OR fp_hash = ?)
   `).all(discordId, user.ip, user.fp_hash);
   return { found: true, user, clusterMembers: others };
 }
 
-module.exports = { saveVerification, getClusterId, getUserInfo, checkAndClaimCheckin, clusterCheck, resetCluster, getClusterInfo };
+module.exports = { saveVerification, getClusterId, getUserInfo, checkAndClaimCheckin, clusterCheck, resetCluster, whitelistUser, unwhitelistUser, getClusterInfo };

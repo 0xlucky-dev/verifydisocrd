@@ -181,6 +181,20 @@ app.delete("/api/cluster/:discordId", apiRateLimit, (req, res) => {
   res.json(result);
 });
 
+// API — admin: whitelist user (exempt from cluster check)
+app.post("/api/whitelist/:discordId", apiRateLimit, (req, res) => {
+  const { discordId } = req.params;
+  const result = db.whitelistUser(discordId);
+  res.json(result);
+});
+
+// API — admin: remove whitelist
+app.delete("/api/whitelist/:discordId", apiRateLimit, (req, res) => {
+  const { discordId } = req.params;
+  const result = db.unwhitelistUser(discordId);
+  res.json(result);
+});
+
 // API — admin: get cluster info for a user (requires API key)
 app.get("/api/cluster/:discordId", apiRateLimit, (req, res) => {
   const { discordId } = req.params;
